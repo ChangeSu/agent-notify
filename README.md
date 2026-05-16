@@ -1,6 +1,16 @@
 # agent-notify
 
+[![Go Version](https://img.shields.io/badge/Go-%3E%3D1.25-blue.svg)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/hellolib/agent-notify.svg)](https://github.com/hellolib/agent-notify/releases)
+
 一个面向 AI Agent 的通知配置工具。支持将 Claude Code、Codex 等 Agent 的事件通知推送到飞书和系统通知。
+
+## 工作流程
+
+<p align="center">
+  <img src="assist/workflow.png" alt="工作流程图" />
+</p>
 
 ## 功能特性
 
@@ -251,7 +261,3 @@ go run ./cmd/agent-notify
 # 构建
 go build -o agent-notify ./cmd/agent-notify
 ```
-
-## License
-
-MIT
