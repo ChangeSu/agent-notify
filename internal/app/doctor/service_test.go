@@ -74,6 +74,12 @@ func TestService_Run(t *testing.T) {
 			settingsPath:    "/tmp/.codex/hooks.json",
 			isHookInstalled: false,
 		}),
+		WithQoderCNIntegration(&mockIntegration{
+			name:            "Qoder CN",
+			detectInstalled: false,
+			settingsPath:    "/tmp/.lingma/settings.json",
+			isHookInstalled: false,
+		}),
 	)
 
 	result, err := svc.Run()
@@ -103,6 +109,7 @@ func TestService_Run(t *testing.T) {
 func TestService_Run_ConfigPresenceAffectsIntegrationStatus(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 
 	svc := NewService(
 		WithClaudeIntegration(&mockIntegration{
@@ -115,6 +122,12 @@ func TestService_Run_ConfigPresenceAffectsIntegrationStatus(t *testing.T) {
 			name:            "Codex",
 			detectInstalled: true,
 			settingsPath:    "/tmp/.codex/hooks.json",
+			isHookInstalled: false,
+		}),
+		WithQoderCNIntegration(&mockIntegration{
+			name:            "Qoder CN",
+			detectInstalled: false,
+			settingsPath:    "/tmp/.lingma/settings.json",
 			isHookInstalled: false,
 		}),
 	)
@@ -139,21 +152,23 @@ func TestService_Print(t *testing.T) {
 	output := &mockOutputWriter{}
 
 	result := &DiagnosticsResult{
-		ConfigPath:              "/tmp/config.yaml",
-		ConfigExists:            true,
-		ClaudeInstalled:         true,
-		ClaudeHookInstalled:     true,
-		CodexInstalled:          false,
-		CodexHookInstalled:      false,
-		SystemNotifyAvailable:   true,
-		SystemNotifyName:        "系统通知",
-		FeishuCLIReady:          true,
-		ClaudeFeishuEnabled:     true,
-		ClaudeSystemEnabled:     true,
-		CodexFeishuEnabled:      false,
-		CodexSystemEnabled:      false,
-		ClaudeIntegrationStatus: StatusInstalled,
-		CodexIntegrationStatus:  StatusAgentMissing,
+		ConfigPath:                "/tmp/config.yaml",
+		ConfigExists:              true,
+		ClaudeInstalled:           true,
+		ClaudeHookInstalled:       true,
+		CodexInstalled:            false,
+		CodexHookInstalled:        false,
+		SystemNotifyAvailable:     true,
+		SystemNotifyName:          "系统通知",
+		FeishuCLIReady:            true,
+		ClaudeFeishuEnabled:       true,
+		ClaudeSystemEnabled:       true,
+		ClaudeWechatWorkEnabled:   true,
+		CodexFeishuEnabled:        false,
+		CodexSystemEnabled:        false,
+		CodexWechatWorkEnabled:    false,
+		ClaudeIntegrationStatus:   StatusInstalled,
+		CodexIntegrationStatus:    StatusAgentMissing,
 	}
 
 	svc.Print(output, result)
@@ -166,6 +181,9 @@ func TestService_Print(t *testing.T) {
 	}
 	if !strings.Contains(output.output, "❌ 未安装 Agent") {
 		t.Fatal("expected missing-agent status to appear in output")
+	}
+	if !strings.Contains(output.output, "企业微信") {
+		t.Fatal("expected wechat-work column to appear in output")
 	}
 }
 

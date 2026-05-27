@@ -123,10 +123,13 @@ func runTestWechatWork(ctx context.Context, streams Streams) error {
 		return err
 	}
 
-	// Try claude config first, fall back to codex
+	// Try claude config first, fall back to codex, then qodercn
 	webhookURL := cfg.Notify.ClaudeCode.Channels.WechatWork.WebhookURL
 	if webhookURL == "" {
 		webhookURL = cfg.Notify.Codex.Channels.WechatWork.WebhookURL
+	}
+	if webhookURL == "" {
+		webhookURL = cfg.Notify.QoderCN.Channels.WechatWork.WebhookURL
 	}
 	if webhookURL == "" {
 		return fmt.Errorf("未配置企业微信 Webhook URL，请先运行配置向导")
@@ -158,11 +161,13 @@ func runInitWechatWork(streams Streams, prompter Prompter) error {
 		return err
 	}
 
-	// Update both agents with the same webhook URL
+	// Update all agents with the same webhook URL
 	cfg.Notify.ClaudeCode.Channels.WechatWork.Enabled = true
 	cfg.Notify.ClaudeCode.Channels.WechatWork.WebhookURL = webhookURL
 	cfg.Notify.Codex.Channels.WechatWork.Enabled = true
 	cfg.Notify.Codex.Channels.WechatWork.WebhookURL = webhookURL
+	cfg.Notify.QoderCN.Channels.WechatWork.Enabled = true
+	cfg.Notify.QoderCN.Channels.WechatWork.WebhookURL = webhookURL
 
 	if err := config.Save(path, cfg); err != nil {
 		return fmt.Errorf("保存配置失败: %w", err)
@@ -177,6 +182,7 @@ func runDoctor(streams Streams) error {
 	svc := doctor.NewService(
 		doctor.WithClaudeIntegration(agentintegrations.NewClaudeIntegration()),
 		doctor.WithCodexIntegration(agentintegrations.NewCodexIntegration()),
+		doctor.WithQoderCNIntegration(agentintegrations.NewQoderCNIntegration()),
 	)
 	result, err := svc.Run()
 	if err != nil {
@@ -226,6 +232,10 @@ func printCurrentNotifyConfig(streams Streams) error {
 		statusIcon(cfg.Notify.Codex.Channels.Feishu.Enabled),
 		statusIcon(cfg.Notify.Codex.Channels.System.Enabled),
 		statusIcon(cfg.Notify.Codex.Channels.WechatWork.Enabled))
+	fmt.Fprintf(streams.Stdout, "| %-14s |  %s   |  %s   |   %s    |\n", "Qoder CN",
+		statusIcon(cfg.Notify.QoderCN.Channels.Feishu.Enabled),
+		statusIcon(cfg.Notify.QoderCN.Channels.System.Enabled),
+		statusIcon(cfg.Notify.QoderCN.Channels.WechatWork.Enabled))
 	fmt.Fprintln(streams.Stdout, "+----------------+------+------+--------+")
 
 	return nil

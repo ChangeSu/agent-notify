@@ -21,15 +21,17 @@ type OutputWriter interface {
 
 // Service handles diagnostics for agent-notify.
 type Service struct {
-	claudeIntegration agentintegrations.Integration
-	codexIntegration  agentintegrations.Integration
+	claudeIntegration   agentintegrations.Integration
+	codexIntegration    agentintegrations.Integration
+	qodercnIntegration agentintegrations.Integration
 }
 
 // NewService creates a new doctor service.
 func NewService(opts ...Option) *Service {
 	s := &Service{
-		claudeIntegration: agentintegrations.NewClaudeIntegration(),
-		codexIntegration:  agentintegrations.NewCodexIntegration(),
+		claudeIntegration:   agentintegrations.NewClaudeIntegration(),
+		codexIntegration:    agentintegrations.NewCodexIntegration(),
+		qodercnIntegration: agentintegrations.NewQoderCNIntegration(),
 	}
 
 	for _, opt := range opts {
@@ -52,6 +54,11 @@ func WithCodexIntegration(i agentintegrations.Integration) Option {
 	return func(s *Service) { s.codexIntegration = i }
 }
 
+// WithQoderCNIntegration sets the Qoder CN integration.
+func WithQoderCNIntegration(i agentintegrations.Integration) Option {
+	return func(s *Service) { s.qodercnIntegration = i }
+}
+
 type DiagnosticStatus string
 
 const (
@@ -63,21 +70,29 @@ const (
 
 // DiagnosticsResult contains diagnostic results.
 type DiagnosticsResult struct {
-	ConfigPath              string
-	ConfigExists            bool
-	ClaudeInstalled         bool
-	ClaudeHookInstalled     bool
-	CodexInstalled          bool
-	CodexHookInstalled      bool
-	SystemNotifyAvailable   bool
-	SystemNotifyName        string
-	FeishuCLIReady          bool
-	ClaudeFeishuEnabled     bool
-	ClaudeSystemEnabled     bool
-	CodexFeishuEnabled      bool
-	CodexSystemEnabled      bool
-	ClaudeIntegrationStatus DiagnosticStatus
-	CodexIntegrationStatus  DiagnosticStatus
+	ConfigPath               string
+	ConfigExists             bool
+	ClaudeInstalled          bool
+	ClaudeHookInstalled      bool
+	CodexInstalled           bool
+	CodexHookInstalled       bool
+	QoderCNInstalled        bool
+	QoderCNHookInstalled    bool
+	SystemNotifyAvailable    bool
+	SystemNotifyName         string
+	FeishuCLIReady           bool
+	ClaudeFeishuEnabled       bool
+	ClaudeSystemEnabled       bool
+	ClaudeWechatWorkEnabled   bool
+	CodexFeishuEnabled        bool
+	CodexSystemEnabled        bool
+	CodexWechatWorkEnabled    bool
+	QoderCNFeishuEnabled     bool
+	QoderCNSystemEnabled     bool
+	QoderCNWechatWorkEnabled bool
+	ClaudeIntegrationStatus   DiagnosticStatus
+	CodexIntegrationStatus    DiagnosticStatus
+	QoderCNIntegrationStatus DiagnosticStatus
 }
 
 // Run executes diagnostics and returns results.
@@ -87,6 +102,7 @@ func (s *Service) Run() (*DiagnosticsResult, error) {
 	// Detect agents
 	result.ClaudeInstalled = s.claudeIntegration.DetectInstalled()
 	result.CodexInstalled = s.codexIntegration.DetectInstalled()
+	result.QoderCNInstalled = s.qodercnIntegration.DetectInstalled()
 
 	// System notification detection
 	result.SystemNotifyAvailable, result.SystemNotifyName = detectSystemNotification()
@@ -112,14 +128,27 @@ func (s *Service) Run() (*DiagnosticsResult, error) {
 		result.CodexHookInstalled = err == nil && installed
 	}
 
+	// Qoder CN hooks settings
+	qodercnSettingsPath, _ := s.qodercnIntegration.SettingsPath("user")
+	if qodercnSettingsPath != "" {
+		installed, err := s.qodercnIntegration.IsHookInstalled(qodercnSettingsPath)
+		result.QoderCNHookInstalled = err == nil && installed
+	}
+
 	// Config values
 	result.ClaudeFeishuEnabled = cfgLoadErr == nil && cfg.Notify.ClaudeCode.Channels.Feishu.Enabled
 	result.ClaudeSystemEnabled = cfgLoadErr == nil && cfg.Notify.ClaudeCode.Channels.System.Enabled
+	result.ClaudeWechatWorkEnabled = cfgLoadErr == nil && cfg.Notify.ClaudeCode.Channels.WechatWork.Enabled
 	result.CodexFeishuEnabled = cfgLoadErr == nil && cfg.Notify.Codex.Channels.Feishu.Enabled
 	result.CodexSystemEnabled = cfgLoadErr == nil && cfg.Notify.Codex.Channels.System.Enabled
+	result.CodexWechatWorkEnabled = cfgLoadErr == nil && cfg.Notify.Codex.Channels.WechatWork.Enabled
+	result.QoderCNFeishuEnabled = cfgLoadErr == nil && cfg.Notify.QoderCN.Channels.Feishu.Enabled
+	result.QoderCNSystemEnabled = cfgLoadErr == nil && cfg.Notify.QoderCN.Channels.System.Enabled
+	result.QoderCNWechatWorkEnabled = cfgLoadErr == nil && cfg.Notify.QoderCN.Channels.WechatWork.Enabled
 
 	result.ClaudeIntegrationStatus = integrationStatus(result.ConfigExists, result.ClaudeInstalled, result.ClaudeHookInstalled)
 	result.CodexIntegrationStatus = integrationStatus(result.ConfigExists, result.CodexInstalled, result.CodexHookInstalled)
+	result.QoderCNIntegrationStatus = integrationStatus(result.ConfigExists, result.QoderCNInstalled, result.QoderCNHookInstalled)
 
 	// Feishu CLI
 	_, feishuCLIConfigErr := feishucli.ParseConfig()
@@ -166,36 +195,65 @@ func (s *Service) Print(output OutputWriter, result *DiagnosticsResult) {
 	codexNotifyStatus := padRight(diagnosticStatusLabel(result.CodexIntegrationStatus), 14)
 	output.Writef("│ Codex       │ %s │ %s │\n", codexInstallStatus, codexNotifyStatus)
 
+	qodercnInstallStatus := "❌ 未安装"
+	if result.QoderCNInstalled {
+		qodercnInstallStatus = "✅ 已安装"
+	}
+	qodercnNotifyStatus := padRight(diagnosticStatusLabel(result.QoderCNIntegrationStatus), 14)
+	output.Writef("│ Qoder CN   │ %s │ %s │\n", qodercnInstallStatus, qodercnNotifyStatus)
+
 	output.Writef("└─────────────┴──────────┴────────────────┘\n")
 	output.Writef("\n")
 
 	// Notification channels table
 	output.Writef("【通知渠道状态】\n")
-	output.Writef("┌─────────────┬────────┬────────┐\n")
-	output.Writef("│ Agent       │ 飞书   │ 系统   │\n")
-	output.Writef("├─────────────┼────────┼────────┤\n")
+	output.Writef("┌─────────────┬────────┬──────────┬────────┐\n")
+	output.Writef("│ Agent       │ 飞书   │ 企业微信 │ 系统   │\n")
+	output.Writef("├─────────────┼────────┼──────────┼────────┤\n")
 
 	claudeFeishu := "❌"
 	if result.ClaudeFeishuEnabled {
 		claudeFeishu = "✅"
 	}
+	claudeWechatWork := "❌"
+	if result.ClaudeWechatWorkEnabled {
+		claudeWechatWork = "✅"
+	}
 	claudeSystem := "❌"
 	if result.ClaudeSystemEnabled {
 		claudeSystem = "✅"
 	}
-	output.Writef("│ Claude Code │   %s    │   %s    │\n", claudeFeishu, claudeSystem)
+	output.Writef("│ Claude Code │   %s    │    %s     │   %s    │\n", claudeFeishu, claudeWechatWork, claudeSystem)
 
 	codexFeishu := "❌"
 	if result.CodexFeishuEnabled {
 		codexFeishu = "✅"
 	}
+	codexWechatWork := "❌"
+	if result.CodexWechatWorkEnabled {
+		codexWechatWork = "✅"
+	}
 	codexSystem := "❌"
 	if result.CodexSystemEnabled {
 		codexSystem = "✅"
 	}
-	output.Writef("│ Codex       │   %s    │   %s    │\n", codexFeishu, codexSystem)
+	output.Writef("│ Codex       │   %s    │    %s     │   %s    │\n", codexFeishu, codexWechatWork, codexSystem)
 
-	output.Writef("└─────────────┴────────┴────────┘\n")
+	qodercnFeishu := "❌"
+	if result.QoderCNFeishuEnabled {
+		qodercnFeishu = "✅"
+	}
+	qodercnWechatWork := "❌"
+	if result.QoderCNWechatWorkEnabled {
+		qodercnWechatWork = "✅"
+	}
+	qodercnSystem := "❌"
+	if result.QoderCNSystemEnabled {
+		qodercnSystem = "✅"
+	}
+	output.Writef("│ Qoder CN   │   %s    │    %s     │   %s    │\n", qodercnFeishu, qodercnWechatWork, qodercnSystem)
+
+	output.Writef("└─────────────┴────────┴──────────┴────────┘\n")
 	output.Writef("\n")
 
 	// System environment table

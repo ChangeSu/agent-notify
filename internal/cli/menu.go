@@ -194,6 +194,12 @@ func runCleanConfig(streams Streams, prompter Prompter) error {
 	defaultCfg.Notify.Codex.Channels.WechatWork.Enabled = false
 	defaultCfg.Notify.Codex.Channels.WechatWork.WebhookURL = ""
 	defaultCfg.Notify.Codex.Events = nil
+	// Clear Qoder CN channel toggles
+	defaultCfg.Notify.QoderCN.Channels.Feishu.Enabled = false
+	defaultCfg.Notify.QoderCN.Channels.System.Enabled = false
+	defaultCfg.Notify.QoderCN.Channels.WechatWork.Enabled = false
+	defaultCfg.Notify.QoderCN.Channels.WechatWork.WebhookURL = ""
+	defaultCfg.Notify.QoderCN.Events = nil
 	if err := config.Save(cfgPath, defaultCfg); err != nil {
 		return fmt.Errorf("保存默认配置失败: %w", err)
 	}

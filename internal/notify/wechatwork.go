@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -85,12 +86,17 @@ func (s *WechatWorkSender) buildMarkdown(msg Message) string {
 		footerText = "🤖 Codex Agent Notify"
 	}
 
+	workspace := msg.Workspace
+	if workspace != "" {
+		workspace = strings.ReplaceAll(workspace, "\\", "/")
+	}
+
 	content := fmt.Sprintf("## %s %s\n\n", emoji, msg.Title)
 	content += fmt.Sprintf(">**事件类型**：%s\n", eventName)
 	content += fmt.Sprintf(">**时间**：%s\n", timestamp)
 	content += fmt.Sprintf(">**消息内容**：%s\n", msg.Body)
-	if msg.Workspace != "" && msg.Agent != "codex" {
-		content += fmt.Sprintf(">**工作目录**：`%s`\n", msg.Workspace)
+	if workspace != "" && msg.Agent != "codex" {
+		content += fmt.Sprintf(">**工作目录**：`%s`\n", workspace)
 	}
 	content += fmt.Sprintf("\n<font color=\"comment\">%s</font>", footerText)
 

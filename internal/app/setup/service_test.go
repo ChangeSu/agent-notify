@@ -115,6 +115,7 @@ func TestService_NoAgentsDetected(t *testing.T) {
 	svc := NewService(
 		WithClaudeIntegration(&mockIntegration{name: "Claude Code", detectInstalled: false}),
 		WithCodexIntegration(&mockIntegration{name: "Codex", detectInstalled: false}),
+		WithQoderCNIntegration(&mockIntegration{name: "Qoder CN", detectInstalled: false}),
 	)
 
 	prompter := &mockPrompter{}

@@ -36,6 +36,9 @@ func buildSenders(cfg config.Config, msg notify.Message) []notify.Sender {
 	if msg.Agent == "codex" {
 		notifyCfg = cfg.Notify.Codex
 	}
+	if msg.Agent == "qodercn" {
+		notifyCfg = cfg.Notify.QoderCN
+	}
 
 	if !contains(notifyCfg.Events, msg.Event) {
 		return senders

@@ -20,6 +20,7 @@ type Config struct {
 type AgentConfig struct {
 	ClaudeCode AgentTargetConfig `yaml:"claude_code"` // Claude Code 配置
 	Codex      AgentTargetConfig `yaml:"codex"`       // Codex 配置
+	QoderCN   AgentTargetConfig `yaml:"qodercn"`    // Qoder CN 配置
 }
 
 // AgentTargetConfig holds configuration for a specific agent.
@@ -32,6 +33,7 @@ type AgentTargetConfig struct {
 type NotifyConfig struct {
 	ClaudeCode AgentNotifyConfig `yaml:"claude_code"` // Claude Code 通知配置
 	Codex      AgentNotifyConfig `yaml:"codex"`       // Codex 通知配置
+	QoderCN   AgentNotifyConfig `yaml:"qodercn"`    // Qoder CN 通知配置
 }
 
 // AgentNotifyConfig holds notification configuration for a single agent.
@@ -69,6 +71,8 @@ func Default() Config {
 	allEvents := []string{"permission_required", "input_required", "run_completed", "run_failed"}
 	// Codex hooks 当前可靠支持的两个事件
 	codexEvents := []string{"permission_required", "run_completed"}
+	// Qoder CN hooks 支持的事件
+	qodercnEvents := []string{"permission_required", "run_completed", "run_failed"}
 
 	return Config{
 		Version: 1,
@@ -78,6 +82,10 @@ func Default() Config {
 				InstallScope: "user",
 			},
 			Codex: AgentTargetConfig{
+				Enabled:      false,
+				InstallScope: "user",
+			},
+			QoderCN: AgentTargetConfig{
 				Enabled:      false,
 				InstallScope: "user",
 			},
@@ -93,6 +101,14 @@ func Default() Config {
 			},
 			Codex: AgentNotifyConfig{
 				Events: append([]string(nil), codexEvents...),
+				Channels: ChannelsConfig{
+					System:     ChannelConfig{Enabled: false},
+					Feishu:     ChannelConfig{Enabled: false},
+					WechatWork: WechatWorkChannelConfig{Enabled: false, WebhookURL: ""},
+				},
+			},
+			QoderCN: AgentNotifyConfig{
+				Events: append([]string(nil), qodercnEvents...),
 				Channels: ChannelsConfig{
 					System:     ChannelConfig{Enabled: false},
 					Feishu:     ChannelConfig{Enabled: false},
@@ -156,6 +172,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Agent.Codex.InstallScope == "" {
 		cfg.Agent.Codex.InstallScope = "user"
+	}
+	if cfg.Agent.QoderCN.InstallScope == "" {
+		cfg.Agent.QoderCN.InstallScope = "user"
 	}
 	if cfg.Behavior.DedupeSeconds == 0 {
 		cfg.Behavior.DedupeSeconds = 60

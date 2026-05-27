@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -116,6 +117,11 @@ func (s *FeishuSender) buildCard(msg Message) map[string]any {
 		footerText = "🤖 Codex Agent Notify"
 	}
 
+	workspace := msg.Workspace
+	if workspace != "" {
+		workspace = strings.ReplaceAll(workspace, "\\", "/")
+	}
+
 	elements := []any{
 		map[string]any{
 			"tag": "div",
@@ -144,12 +150,12 @@ func (s *FeishuSender) buildCard(msg Message) map[string]any {
 			},
 		},
 	}
-	if msg.Workspace != "" && !isCodex {
+	if workspace != "" && !isCodex {
 		elements = append(elements, map[string]any{
 			"tag": "div",
 			"text": map[string]any{
 				"tag":     "lark_md",
-				"content": fmt.Sprintf("**工作目录**\n`%s`", msg.Workspace),
+				"content": fmt.Sprintf("**工作目录**\n`%s`", workspace),
 			},
 		})
 	}

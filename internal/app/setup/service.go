@@ -39,10 +39,11 @@ type OutputWriter interface {
 
 // Service handles the init/setup flow for agent-notify.
 type Service struct {
-	claudeIntegration agentintegrations.Integration
-	codexIntegration  agentintegrations.Integration
-	feishuPreparer    FeishuPreparer
-	configLoader      ConfigLoader
+	claudeIntegration   agentintegrations.Integration
+	codexIntegration    agentintegrations.Integration
+	qodercnIntegration agentintegrations.Integration
+	feishuPreparer      FeishuPreparer
+	configLoader        ConfigLoader
 }
 
 // ConfigLoader loads and saves configuration.
@@ -62,8 +63,9 @@ type SetupResult struct {
 // NewService creates a new setup service.
 func NewService(opts ...Option) *Service {
 	s := &Service{
-		claudeIntegration: agentintegrations.NewClaudeIntegration(),
-		codexIntegration:  agentintegrations.NewCodexIntegration(),
+		claudeIntegration:   agentintegrations.NewClaudeIntegration(),
+		codexIntegration:    agentintegrations.NewCodexIntegration(),
+		qodercnIntegration: agentintegrations.NewQoderCNIntegration(),
 	}
 
 	for _, opt := range opts {
@@ -84,6 +86,11 @@ func WithClaudeIntegration(i agentintegrations.Integration) Option {
 // WithCodexIntegration sets the Codex integration.
 func WithCodexIntegration(i agentintegrations.Integration) Option {
 	return func(s *Service) { s.codexIntegration = i }
+}
+
+// WithQoderCNIntegration sets the Qoder CN integration.
+func WithQoderCNIntegration(i agentintegrations.Integration) Option {
+	return func(s *Service) { s.qodercnIntegration = i }
 }
 
 // WithFeishuPreparer sets the Feishu preparer.
@@ -111,6 +118,14 @@ var codexEventOptions = []PromptOption{
 	{Label: "任务完成 (run_completed)", Value: "run_completed"},
 }
 
+// qodercnEventOptions 包含 Qoder CN hooks 支持的事件：
+// PreToolUse → permission_required，Stop → run_completed，PostToolUseFailure → run_failed。
+var qodercnEventOptions = []PromptOption{
+	{Label: "需要授权 (permission_required)", Value: "permission_required"},
+	{Label: "任务完成 (run_completed)", Value: "run_completed"},
+	{Label: "任务失败 (run_failed)", Value: "run_failed"},
+}
+
 // Run executes the init flow.
 func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWriter, configPath, binaryPath string) (*SetupResult, error) {
 	cfg, path, err := s.loadConfig(configPath)
@@ -133,9 +148,15 @@ func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWrite
 			defaultAgent = "codex"
 		}
 	}
+	if s.qodercnIntegration.DetectInstalled() {
+		agentOptions = append(agentOptions, PromptOption{Label: "Qoder CN", Value: "qodercn"})
+		if cfg.Agent.QoderCN.Enabled && defaultAgent == "" {
+			defaultAgent = "qodercn"
+		}
+	}
 
 	if len(agentOptions) == 0 {
-		return nil, errors.New("未检测到 Claude Code 或 Codex，请先安装其中一个")
+		return nil, errors.New("未检测到 Claude Code、Codex 或 Qoder CN，请先安装其中一个")
 	}
 
 	// If no agent is enabled, default to the first detected agent
@@ -161,7 +182,7 @@ func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWrite
 		if cfg.Notify.ClaudeCode.Channels.WechatWork.Enabled {
 			currentChannels = append(currentChannels, "wechat-work")
 		}
-	} else {
+	} else if selectedAgent == "codex" {
 		if cfg.Notify.Codex.Channels.Feishu.Enabled {
 			currentChannels = append(currentChannels, "feishu")
 		}
@@ -169,6 +190,16 @@ func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWrite
 			currentChannels = append(currentChannels, "system")
 		}
 		if cfg.Notify.Codex.Channels.WechatWork.Enabled {
+			currentChannels = append(currentChannels, "wechat-work")
+		}
+	} else {
+		if cfg.Notify.QoderCN.Channels.Feishu.Enabled {
+			currentChannels = append(currentChannels, "feishu")
+		}
+		if cfg.Notify.QoderCN.Channels.System.Enabled {
+			currentChannels = append(currentChannels, "system")
+		}
+		if cfg.Notify.QoderCN.Channels.WechatWork.Enabled {
 			currentChannels = append(currentChannels, "wechat-work")
 		}
 	}
@@ -197,16 +228,19 @@ func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWrite
 		return s.disableAgentNotification(cfg, path, selectedAgent, output)
 	}
 
-	// Step 4: 两个 Agent 都走事件多选；可选项不同（Codex 只支持 2 个事件）。
+	// Step 4: 三个 Agent 都走事件多选；可选项不同。
 	var events []string
 	var eventOptions []PromptOption
 	var currentEvents []string
 	if selectedAgent == "claude" {
 		eventOptions = claudeEventOptions
 		currentEvents = cfg.Notify.ClaudeCode.Events
-	} else {
+	} else if selectedAgent == "codex" {
 		eventOptions = codexEventOptions
 		currentEvents = cfg.Notify.Codex.Events
+	} else {
+		eventOptions = qodercnEventOptions
+		currentEvents = cfg.Notify.QoderCN.Events
 	}
 
 	events, err = prompter.MultiSelect("通知事件", eventOptions, currentEvents)
@@ -326,6 +360,59 @@ func (s *Service) Run(ctx context.Context, prompter Prompter, output OutputWrite
 			SettingsPath: agentSettingsPath,
 		}, nil
 
+	case "qodercn":
+		cfg.Notify.QoderCN.Channels.Feishu.Enabled = feishuEnabled
+		cfg.Notify.QoderCN.Channels.System.Enabled = systemEnabled
+		cfg.Notify.QoderCN.Events = dedupeStrings(events)
+
+		if feishuEnabled {
+			if err := s.prepareFeishu(ctx); err != nil {
+				return nil, fmt.Errorf("飞书初始化失败: %w", err)
+			}
+		}
+
+		if wechatWorkEnabled {
+			currentURL := cfg.Notify.QoderCN.Channels.WechatWork.WebhookURL
+			webhookURL, err := prompter.Input("企业微信群机器人 Webhook URL", currentURL)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Notify.QoderCN.Channels.WechatWork.Enabled = true
+			cfg.Notify.QoderCN.Channels.WechatWork.WebhookURL = webhookURL
+		} else {
+			cfg.Notify.QoderCN.Channels.WechatWork.Enabled = false
+		}
+
+		agentScope := "user"
+		if cfg.Agent.QoderCN.InstallScope == "project" {
+			agentScope = "project"
+		}
+
+		agentSettingsPath, err := s.qodercnIntegration.SettingsPath(agentScope)
+		if err != nil {
+			return nil, fmt.Errorf("获取 qodercn settings 路径失败: %w", err)
+		}
+
+		resolvedBinary := common.ResolveBinaryPath(binaryPath)
+		if err := s.qodercnIntegration.Install(agentSettingsPath, resolvedBinary); err != nil {
+			return nil, fmt.Errorf("安装 qodercn hooks 失败: %w", err)
+		}
+		output.Writef("qodercn hooks 安装: %s\n", agentSettingsPath)
+		output.Writef("提示: 修改 hooks 配置后需要重启 IDE 才能生效\n")
+		cfg.Agent.QoderCN.InstallScope = agentScope
+		cfg.Agent.QoderCN.Enabled = true
+
+		if err := s.saveConfig(path, cfg); err != nil {
+			return nil, err
+		}
+		output.Writef("配置文件: %s\n", path)
+
+		return &SetupResult{
+			Agent:        selectedAgent,
+			ConfigPath:   path,
+			SettingsPath: agentSettingsPath,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported agent: %s", selectedAgent)
 	}
@@ -404,6 +491,12 @@ func (s *Service) disableAgentNotification(cfg config.Config, path, agent string
 		cfg.Notify.Codex.Channels.WechatWork.Enabled = false
 		cfg.Notify.Codex.Events = nil
 		cfg.Agent.Codex.Enabled = false
+	case "qodercn":
+		cfg.Notify.QoderCN.Channels.Feishu.Enabled = false
+		cfg.Notify.QoderCN.Channels.System.Enabled = false
+		cfg.Notify.QoderCN.Channels.WechatWork.Enabled = false
+		cfg.Notify.QoderCN.Events = nil
+		cfg.Agent.QoderCN.Enabled = false
 	}
 
 	if err := s.saveConfig(path, cfg); err != nil {
@@ -424,6 +517,8 @@ func agentName(agent string) string {
 		return "Claude Code"
 	case "codex":
 		return "Codex"
+	case "qodercn":
+		return "Qoder CN"
 	default:
 		return agent
 	}
